@@ -1,37 +1,50 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
+from flask_nameko import FlaskPooledClusterRpcProxy
 
-app = Flask(__name__)
+rpc = FlaskPooledClusterRpcProxy()
 
-@app.route('/greet', methods=['POST'])
+
+def create_app():
+    app = Flask(__name__)
+
+    app.config.update(
+        {
+            "NAMEKO_AMQP_URI": "pyamqp://guest:guest@localhost",
+            "NAMEKO_INITIAL_CONNECTIONS": 8,
+            "NAMEKO_MAX_CONNECTIONS": 16,
+            "NAMEKO_RPC_TIMEOUT": 120,
+        }
+    )
+
+    rpc.init_app(app)
+
+    return app
+
+
+app = create_app()
+
+
+@app.route("/greet", methods=["GET"])
 def greet():
-    name = request.json.get('name')
-    message = f'Hello, {name}!'
-    return jsonify({'message': message})
+    message = f"Hello!"
+    return jsonify({"message": message})
 
 
-@app.route('/hello', methods=['GET'])
-def hello():
-    message = "Hello War"
+@app.route("/task_1", methods=["GET"])
+def task_1():
+    message = rpc.service_rpc.task_1("task 1")
+
     return message
 
-@app.route('/get_prime', methods=['GET'])
-def get_prime():
-    prime = []
-    for i in range(1, 1001):
-        if is_prime(i):
-           prime.append(i)
 
-    return prime
+@app.route("/get_primes", methods=["GET"])
+def get_primes():
+    primes = []
 
-def is_prime(n):
-    if n <= 1:
-        return False
-    for i in range(2, n):
-        if n % i == 0:
-            return False
-    return True
+    primes = rpc.service_rpc.get_primes(100000)
 
-if __name__ == '__main__':
-    app.run(debug=True)
+    return make_response(jsonify({"primes": primes}), 200)
 
 
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", debug=True)
